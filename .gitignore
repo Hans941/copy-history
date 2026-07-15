@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Xcode / Swift
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.profraw
+
+# Local agent / IDE state
+.codex/
+.vaf/
+.cursor/
+.vscode/
+.idea/
+
+# Distribution artifacts
+*.dmg
+*.zip
+*.xcarchive
+
+# Logs / temp
+*.log
+/tmp/
