@@ -8,6 +8,10 @@ final class PanelWindowManager {
         .fullScreenAuxiliary,
         .stationary
     ]
+    static let panelStyleMask: NSWindow.StyleMask = [
+        .borderless,
+        .fullSizeContentView
+    ]
 
     private weak var window: NSWindow?
     private var resizeObserver: NSObjectProtocol?
@@ -82,15 +86,15 @@ final class PanelWindowManager {
     // MARK: - Private Helpers
 
     private func configure(window: NSWindow) {
+        window.styleMask = Self.panelStyleMask
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.toolbar = nil
+        window.hasShadow = false
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isMovable = false
         window.isMovableByWindowBackground = false
-        window.styleMask.remove(.closable)
-        window.styleMask.remove(.miniaturizable)
-        window.styleMask.remove(.resizable)
         window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true

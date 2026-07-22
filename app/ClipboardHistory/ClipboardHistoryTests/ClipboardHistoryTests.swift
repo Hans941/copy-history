@@ -486,6 +486,14 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertTrue(behavior.contains(.stationary))
     }
 
+    func testPanelWindowManagerUsesBorderlessPanelStyle() {
+        let styleMask = PanelWindowManager.panelStyleMask
+
+        XCTAssertTrue(styleMask.contains(.borderless))
+        XCTAssertTrue(styleMask.contains(.fullSizeContentView))
+        XCTAssertFalse(styleMask.contains(.titled))
+    }
+
     @MainActor
     func testJSONPreviewWindowContainsScreenPointInsideWindow() {
         let manager = JSONPreviewWindowManager.shared
