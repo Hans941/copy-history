@@ -48,6 +48,7 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
     var sourceApp: String
     var formattedTimestampText: String?
     var isJSONText: Bool
+    var developerMetadata: ClipboardDeveloperMetadata?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -61,6 +62,7 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
         case sourceApp
         case formattedTimestampText
         case isJSONText
+        case developerMetadata
     }
 
     init(id: UUID = UUID(),
@@ -73,7 +75,8 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
          note: String = "",
          sourceApp: String = "未知",
          formattedTimestampText: String? = nil,
-         isJSONText: Bool = false) {
+         isJSONText: Bool = false,
+         developerMetadata: ClipboardDeveloperMetadata? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.type = type
@@ -85,6 +88,7 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
         self.sourceApp = sourceApp
         self.formattedTimestampText = formattedTimestampText
         self.isJSONText = isJSONText
+        self.developerMetadata = developerMetadata
     }
 
     init(from decoder: Decoder) throws {
@@ -100,6 +104,7 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
         sourceApp = try container.decodeIfPresent(String.self, forKey: .sourceApp) ?? "未知"
         formattedTimestampText = try container.decodeIfPresent(String.self, forKey: .formattedTimestampText)
         isJSONText = try container.decodeIfPresent(Bool.self, forKey: .isJSONText) ?? false
+        developerMetadata = try container.decodeIfPresent(ClipboardDeveloperMetadata.self, forKey: .developerMetadata)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -115,6 +120,7 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
         try container.encode(sourceApp, forKey: .sourceApp)
         try container.encodeIfPresent(formattedTimestampText, forKey: .formattedTimestampText)
         try container.encode(isJSONText, forKey: .isJSONText)
+        try container.encodeIfPresent(developerMetadata, forKey: .developerMetadata)
     }
 
     var previewText: String {

@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var timestampFormatDraft: String = ""
     @State private var timeZoneIdentifierDraft: String = ""
+    @State private var siteInfoDataFilePathDraft: String = ""
     @State private var highlightedIndex: Int = 0
     @State private var outsideClickMonitor: Any?
     @State private var showClearNonFavoritesConfirmation = false
@@ -121,7 +122,6 @@ struct ContentView: View {
     private var panelBody: some View {
         VStack(spacing: 14) {
             toolbar
-            Divider().opacity(0.08)
             contentList
         }
         .padding(.vertical, 16)
@@ -264,6 +264,11 @@ struct ContentView: View {
                                             presentJSONPreview(for: entry)
                                         }
                                     }
+                                    if entry.developerMetadata?.hasSiteContext == true {
+                                        Button("复制 site 信息") {
+                                            viewModel.openSiteInfoAction(for: entry)
+                                        }
+                                    }
                                 }
                                 Button(entry.isFavorite ? "取消收藏" : "收藏") {
                                     viewModel.toggleFavorite(for: entry)
@@ -329,6 +334,9 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                if let developerMetadata = entry.developerMetadata {
+                    developerMetadataSummary(developerMetadata)
+                }
             } else {
                 cardImage(for: entry)
             }
@@ -378,6 +386,13 @@ struct ContentView: View {
         .frame(height: 110)
     }
 
+    private func developerMetadataSummary(_ metadata: ClipboardDeveloperMetadata) -> some View {
+        Label(metadata.summaryText, systemImage: "curlybraces.square")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+    }
+
     private var settingsSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("设置")
@@ -409,8 +424,17 @@ struct ContentView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("site-info 数据")
+                    .font(.subheadline.weight(.medium))
+                TextField("site-info JSON 文件路径，留空则只展示识别到的 app_local/site_id", text: $siteInfoDataFilePathDraft)
+                Text("JSON 数组字段支持 app_local、site_id、site_name、shop_type、idc、tenant_id、area_id。配置后复制 app_local 或 site_id 会补全站点、出口和租户信息。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Button("完成") {
-                saveTimestampSettings()
+                saveSettingsDrafts()
                 showSettings = false
             }
                 .buttonStyle(.borderedProminent)
@@ -419,7 +443,7 @@ struct ContentView: View {
         .padding()
         .frame(minWidth: 420)
         .onAppear {
-            loadTimestampSettingDrafts()
+            loadSettingDrafts()
         }
     }
 
@@ -466,14 +490,16 @@ struct ContentView: View {
         )
     }
 
-    private func loadTimestampSettingDrafts() {
+    private func loadSettingDrafts() {
         timestampFormatDraft = viewModel.settings.timestampDisplayFormat
         timeZoneIdentifierDraft = viewModel.settings.timestampTimeZoneIdentifier
+        siteInfoDataFilePathDraft = viewModel.settings.siteInfoDataFilePath
     }
 
-    private func saveTimestampSettings() {
+    private func saveSettingsDrafts() {
         viewModel.updateTimestampDisplayFormat(timestampFormatDraft)
         viewModel.updateTimestampTimeZoneIdentifier(timeZoneIdentifierDraft)
+        viewModel.updateSiteInfoDataFilePath(siteInfoDataFilePathDraft)
     }
 
     private func handleKey(event: NSEvent) -> Bool {
@@ -539,7 +565,7 @@ struct ContentView: View {
         showSettings = false
         searchFocused = false
         restorePreviousSearchInputSource()
-        loadTimestampSettingDrafts()
+        loadSettingDrafts()
         JSONPreviewWindowManager.shared.close()
     }
 

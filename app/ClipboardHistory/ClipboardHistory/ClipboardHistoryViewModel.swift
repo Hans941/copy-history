@@ -74,7 +74,8 @@ final class ClipboardHistoryViewModel: ObservableObject {
             let textMatch = entry.text?.localizedCaseInsensitiveContains(normalizedKeyword) == true
             let noteMatch = entry.note.localizedCaseInsensitiveContains(normalizedKeyword)
             let timestampMatch = entry.formattedTimestampText?.localizedCaseInsensitiveContains(normalizedKeyword) == true
-            return textMatch || noteMatch || timestampMatch
+            let developerMetadataMatch = entry.developerMetadata?.searchableText.localizedCaseInsensitiveContains(normalizedKeyword) == true
+            return textMatch || noteMatch || timestampMatch || developerMetadataMatch
         }
     }
 
@@ -162,6 +163,14 @@ final class ClipboardHistoryViewModel: ObservableObject {
         refreshDerivedMetadata()
     }
 
+    func updateSiteInfoDataFilePath(_ path: String) {
+        let value = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value != settings.siteInfoDataFilePath else { return }
+        settingsManager.update { $0.siteInfoDataFilePath = value }
+        settings.siteInfoDataFilePath = value
+        refreshDerivedMetadata()
+    }
+
     func update(entry: ClipboardEntry, newText: String, note: String) {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         guard entries[index].type == .text else { return }
@@ -175,6 +184,15 @@ final class ClipboardHistoryViewModel: ObservableObject {
     func jsonPreview(for entry: ClipboardEntry) -> String? {
         guard entry.type == .text, let text = entry.text else { return nil }
         return ClipboardTextAnalyzer.prettyPrintedJSON(from: text)
+    }
+
+    func openSiteInfoAction(for entry: ClipboardEntry) {
+        guard let metadata = entry.developerMetadata,
+              let action = ClipboardDeveloperActionBuilder.siteInfoAction(metadata: metadata) else {
+            displayAlert(message: "未识别到 site 信息")
+            return
+        }
+        performDeveloperAction(action)
     }
 
     func copyToPasteboard(entry: ClipboardEntry, showAlert: Bool = true) {
@@ -339,6 +357,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
             var plainEntry = entry
             plainEntry.formattedTimestampText = nil
             plainEntry.isJSONText = false
+            plainEntry.developerMetadata = nil
             return plainEntry
         }
 
@@ -346,6 +365,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         var enrichedEntry = entry
         enrichedEntry.formattedTimestampText = metadata.formattedTimestampText
         enrichedEntry.isJSONText = metadata.isJSONText
+        enrichedEntry.developerMetadata = metadata.developerMetadata
         return enrichedEntry
     }
 
@@ -379,5 +399,12 @@ final class ClipboardHistoryViewModel: ObservableObject {
     private func displayAlert(message: String) {
         alertMessage = message
         showingAlert = true
+    }
+
+    private func performDeveloperAction(_ action: ClipboardDeveloperAction) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(action.fallbackText, forType: .string)
+        rememberInternalPasteboardWrite(.text(action.fallbackText))
     }
 }

@@ -253,6 +253,172 @@ final class ClipboardHistoryTests: XCTestCase {
         }
     }
 
+    func testDeveloperMetadataFormatsConfiguredSiteInfo() async throws {
+        let siteInfoURL = try makeSiteInfoCatalogFile()
+        let store = InMemoryStore()
+        let watcher = MockWatcher()
+        let settingsManager = MockSettingsManager(current: ClipboardSettings(siteInfoDataFilePath: siteInfoURL.path))
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: store, watcher: watcher, settingsManager: settingsManager)
+        }
+
+        watcher.triggerText("""
+        app_local=es site_id=10042
+        https://sgp-op.api.mi.com/site-info?app_local=fr
+        """)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        await MainActor.run {
+            let metadata = viewModel.entries.first?.developerMetadata
+            XCTAssertEqual(metadata?.appLocals, ["es", "fr"])
+            XCTAssertEqual(metadata?.siteIdentifiers.first, "10042")
+            XCTAssertEqual(metadata?.domains.first, "sgp-op.api.mi.com")
+            XCTAssertEqual(metadata?.siteInfos.first?.siteName, "西班牙")
+            XCTAssertEqual(metadata?.siteInfos.first?.shopType, "B2C")
+            XCTAssertEqual(metadata?.siteInfos.first?.idc, "sg")
+            XCTAssertTrue(metadata?.summaryText.contains("西班牙") == true)
+            XCTAssertTrue(metadata?.summaryText.contains("出口 sg") == true)
+        }
+    }
+
+    func testDeveloperMetadataDetectsBareAppLocalWhenCatalogKnowsIt() async throws {
+        let siteInfoURL = try makeSiteInfoCatalogFile()
+        let metadata = ClipboardTextAnalyzer.analyze(
+            "es",
+            settings: ClipboardSettings(siteInfoDataFilePath: siteInfoURL.path)
+        ).developerMetadata
+
+        XCTAssertEqual(metadata?.appLocals, ["es"])
+        XCTAssertEqual(metadata?.siteInfos.first?.siteID, "10042")
+        XCTAssertEqual(metadata?.summaryText, "es · site 10042 · 西班牙 · B2C · 出口 sg · XIAOMI")
+    }
+
+    func testDeveloperMetadataDetectsBareSiteIDWhenCatalogKnowsIt() async throws {
+        let siteInfoURL = try makeSiteInfoCatalogFile()
+        let metadata = ClipboardTextAnalyzer.analyze(
+            "10042",
+            settings: ClipboardSettings(siteInfoDataFilePath: siteInfoURL.path)
+        ).developerMetadata
+
+        XCTAssertEqual(metadata?.siteIdentifiers, ["10042"])
+        XCTAssertEqual(metadata?.siteInfos.first?.appLocal, "es")
+        XCTAssertEqual(metadata?.summaryText, "es · site 10042 · 西班牙 · B2C · 出口 sg · XIAOMI")
+    }
+
+    func testDeveloperMetadataHandlesDuplicateAppLocalsInCatalog() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("json")
+        let json = """
+        [
+          {"app_local":"es","site_id":"1","site_name":"Poco España","shop_type":"B2C","tenant_id":"POCO","site_type":"shop"},
+          {"app_local":"es","site_id":"2","site_name":"Xiaomi España","shop_type":"B2C","tenant_id":"XIAOMI","idc":"ams","site_type":"shop"}
+        ]
+        """
+        try Data(json.utf8).write(to: url)
+
+        let metadata = ClipboardTextAnalyzer.analyze(
+            "es",
+            settings: ClipboardSettings(siteInfoDataFilePath: url.path)
+        ).developerMetadata
+
+        XCTAssertEqual(metadata?.siteInfos.first?.siteID, "2")
+        XCTAssertEqual(metadata?.siteInfos.first?.tenantID, "XIAOMI")
+    }
+
+    func testDeveloperMetadataSearchMatchesDerivedValues() async throws {
+        let siteInfoURL = try makeSiteInfoCatalogFile()
+        let entry = ClipboardEntry(type: .text,
+                                   text: "app_local=es",
+                                   sourceApp: "test")
+        let store = InMemoryStore(entries: [entry])
+        let watcher = MockWatcher()
+        let settingsManager = MockSettingsManager(current: ClipboardSettings(siteInfoDataFilePath: siteInfoURL.path))
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: store, watcher: watcher, settingsManager: settingsManager)
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        await MainActor.run {
+            viewModel.searchText = "西班牙"
+            XCTAssertEqual(viewModel.filteredEntries.count, 1)
+        }
+    }
+
+    func testDeveloperSiteInfoActionCopiesFormattedInfo() {
+        let metadata = ClipboardDeveloperMetadata(appLocals: ["es"],
+                                                  siteIdentifiers: ["10042"],
+                                                  domains: [],
+                                                  urls: [],
+                                                  siteInfos: [ClipboardSiteInfo(appLocal: "es",
+                                                                                siteID: "10042",
+                                                                                siteName: "西班牙",
+                                                                                shopType: "B2C",
+                                                                                idc: "sg",
+                                                                                tenantID: "XIAOMI",
+                                                                                areaID: "ES")])
+
+        let action = ClipboardDeveloperActionBuilder.siteInfoAction(metadata: metadata)
+
+        XCTAssertEqual(action?.fallbackText, "es · site 10042 · 西班牙 · B2C · 出口 sg · XIAOMI")
+    }
+
+    func testCopySiteInfoActionDoesNotShowAlert() async throws {
+        let siteInfoURL = try makeSiteInfoCatalogFile()
+        let entry = ClipboardEntry(type: .text,
+                                   text: "app_local=es",
+                                   sourceApp: "test")
+        let store = InMemoryStore(entries: [entry])
+        let watcher = MockWatcher()
+        let settingsManager = MockSettingsManager(current: ClipboardSettings(siteInfoDataFilePath: siteInfoURL.path))
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: store, watcher: watcher, settingsManager: settingsManager)
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        await MainActor.run {
+            viewModel.openSiteInfoAction(for: viewModel.entries[0])
+            XCTAssertFalse(viewModel.showingAlert)
+            XCTAssertEqual(NSPasteboard.general.string(forType: .string), "es · site 10042 · 西班牙 · B2C · 出口 sg · XIAOMI")
+        }
+    }
+
+    func testClipboardEntryCodableKeepsDeveloperMetadataOptional() throws {
+        let legacyJSON = """
+        {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "timestamp": 1704067200,
+          "type": "text",
+          "text": "hello",
+          "isFavorite": false,
+          "tab": "clipboard_history",
+          "note": "",
+          "sourceApp": "test",
+          "isJSONText": false
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(ClipboardEntry.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertNil(decoded.developerMetadata)
+
+        let current = ClipboardEntry(type: .text,
+                                     text: "app_local=es",
+                                     sourceApp: "test",
+                                     developerMetadata: ClipboardDeveloperMetadata(appLocals: ["es"],
+                                                                                  siteIdentifiers: [],
+                                                                                  domains: [],
+                                                                                  urls: [],
+                                                                                  siteInfos: []))
+        let encoded = try JSONEncoder().encode(current)
+        let roundTrip = try JSONDecoder().decode(ClipboardEntry.self, from: encoded)
+
+        XCTAssertEqual(roundTrip.developerMetadata?.appLocals, ["es"])
+        XCTAssertEqual(roundTrip.developerMetadata?.siteIdentifiers, [])
+    }
+
     func testJSONPreviewSearchMatchesKeywordCaseInsensitively() {
         let ranges = JSONPreviewSearch.matchRanges(
             in: "{\n  \"Name\": \"Alice\",\n  \"nickname\": \"ALICE\"\n}",
@@ -363,6 +529,36 @@ final class ClipboardHistoryTests: XCTestCase {
         NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
         image.unlockFocus()
         return image
+    }
+
+    private func makeSiteInfoCatalogFile() throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("json")
+        let json = """
+        [
+          {
+            "app_local": "es",
+            "site_id": "10042",
+            "site_name": "西班牙",
+            "shop_type": "B2C",
+            "idc": "sg",
+            "tenant_id": "XIAOMI",
+            "area_id": "ES"
+          },
+          {
+            "app_local": "fr",
+            "site_id": "10043",
+            "site_name": "法国",
+            "shop_type": "B2C",
+            "idc": "ams",
+            "tenant_id": "XIAOMI",
+            "area_id": "FR"
+          }
+        ]
+        """
+        try Data(json.utf8).write(to: url)
+        return url
     }
 
     private func waitUntil(timeout: TimeInterval, condition: () -> Bool) {

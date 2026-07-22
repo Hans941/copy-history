@@ -7,6 +7,7 @@ struct ClipboardSettings: Codable, Equatable {
     var theme: String = "auto"
     var timestampDisplayFormat: String = "yyyy/MM/dd HH:mm:ss"
     var timestampTimeZoneIdentifier: String = TimeZone.current.identifier
+    var siteInfoDataFilePath: String = ""
 
     private enum CodingKeys: String, CodingKey {
         case historyLimit
@@ -15,6 +16,7 @@ struct ClipboardSettings: Codable, Equatable {
         case theme
         case timestampDisplayFormat
         case timestampTimeZoneIdentifier
+        case siteInfoDataFilePath
     }
 
     init() {}
@@ -24,13 +26,15 @@ struct ClipboardSettings: Codable, Equatable {
          pruneIntervalHours: Int = 6,
          theme: String = "auto",
          timestampDisplayFormat: String = "yyyy/MM/dd HH:mm:ss",
-         timestampTimeZoneIdentifier: String = TimeZone.current.identifier) {
+         timestampTimeZoneIdentifier: String = TimeZone.current.identifier,
+         siteInfoDataFilePath: String = "") {
         self.historyLimit = historyLimit
         self.imageQuotaMB = imageQuotaMB
         self.pruneIntervalHours = pruneIntervalHours
         self.theme = theme
         self.timestampDisplayFormat = timestampDisplayFormat
         self.timestampTimeZoneIdentifier = timestampTimeZoneIdentifier
+        self.siteInfoDataFilePath = siteInfoDataFilePath
     }
 
     init(from decoder: Decoder) throws {
@@ -41,6 +45,7 @@ struct ClipboardSettings: Codable, Equatable {
         theme = try container.decodeIfPresent(String.self, forKey: .theme) ?? "auto"
         timestampDisplayFormat = try container.decodeIfPresent(String.self, forKey: .timestampDisplayFormat) ?? "yyyy/MM/dd HH:mm:ss"
         timestampTimeZoneIdentifier = try container.decodeIfPresent(String.self, forKey: .timestampTimeZoneIdentifier) ?? TimeZone.current.identifier
+        siteInfoDataFilePath = try container.decodeIfPresent(String.self, forKey: .siteInfoDataFilePath) ?? ""
     }
 }
 
