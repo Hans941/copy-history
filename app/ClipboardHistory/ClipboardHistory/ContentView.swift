@@ -242,6 +242,8 @@ struct ContentView: View {
             } else {
                 NativeHorizontalCardList(
                     items: viewModel.filteredEntries,
+                    itemsVersion: viewModel.filteredEntriesVersion,
+                    contentVersion: viewModel.entriesVersion,
                     highlightedIndex: highlightedIndex,
                     cardHeight: cardSize.height,
                     cardWidth: cardSize.width,
@@ -288,7 +290,7 @@ struct ContentView: View {
                 .onAppear {
                     clampHighlightedIndex()
                 }
-                .onChange(of: viewModel.filteredEntries) { _ in
+                .onReceive(viewModel.$filteredEntries) { _ in
                     clampHighlightedIndex()
                 }
                 .frame(height: cardSize.height + 32)
@@ -519,6 +521,7 @@ struct ContentView: View {
             moveSelection(by: -1)
             return true
         case 36: // return
+            viewModel.applySearchImmediately()
             triggerSelection()
             return true
         case 53: // esc
@@ -668,6 +671,8 @@ struct ContentView: View {
 
 struct NativeHorizontalCardList<Item: Identifiable>: NSViewRepresentable {
     let items: [Item]
+    let itemsVersion: Int
+    let contentVersion: Int
     let highlightedIndex: Int
     let cardHeight: CGFloat
     let cardWidth: CGFloat
@@ -704,9 +709,11 @@ struct NativeHorizontalCardList<Item: Identifiable>: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: HorizontalDragScrollView, context: Context) {
-        context.coordinator.update(parent: self)
-        context.coordinator.updateVisibleRangeIfNeeded(force: true)
-        context.coordinator.refreshContentLayout()
+        let needsContentRefresh = context.coordinator.update(parent: self)
+        if needsContentRefresh {
+            context.coordinator.refreshContentLayout()
+        }
+        context.coordinator.updateVisibleRangeIfNeeded(force: needsContentRefresh)
         context.coordinator.scrollToHighlightedIfNeeded(animated: true)
     }
 
@@ -718,6 +725,13 @@ struct NativeHorizontalCardList<Item: Identifiable>: NSViewRepresentable {
         private var visibleRange: ClosedRange<Int>?
         private var lastAutoScrolledHighlight: Int?
         private var lastAutoScrolledItemCount: Int?
+        private var lastRenderedItemsVersion: Int?
+        private var lastRenderedContentVersion: Int?
+        private var lastRenderedHighlightedIndex: Int?
+        private var lastRenderedCardHeight: CGFloat?
+        private var lastRenderedCardWidth: CGFloat?
+        private var lastRenderedCardSpacing: CGFloat?
+        private var lastRenderedHorizontalPadding: CGFloat?
 
         init(parent: NativeHorizontalCardList) {
             self.parent = parent
@@ -729,8 +743,27 @@ struct NativeHorizontalCardList<Item: Identifiable>: NSViewRepresentable {
             }
         }
 
-        func update(parent: NativeHorizontalCardList) {
+        func update(parent: NativeHorizontalCardList) -> Bool {
+            let needsContentRefresh =
+                parent.itemsVersion != lastRenderedItemsVersion ||
+                parent.contentVersion != lastRenderedContentVersion ||
+                parent.highlightedIndex != lastRenderedHighlightedIndex ||
+                parent.cardHeight != lastRenderedCardHeight ||
+                parent.cardWidth != lastRenderedCardWidth ||
+                parent.cardSpacing != lastRenderedCardSpacing ||
+                parent.horizontalPadding != lastRenderedHorizontalPadding
+
             self.parent = parent
+            if needsContentRefresh {
+                lastRenderedItemsVersion = parent.itemsVersion
+                lastRenderedContentVersion = parent.contentVersion
+                lastRenderedHighlightedIndex = parent.highlightedIndex
+                lastRenderedCardHeight = parent.cardHeight
+                lastRenderedCardWidth = parent.cardWidth
+                lastRenderedCardSpacing = parent.cardSpacing
+                lastRenderedHorizontalPadding = parent.horizontalPadding
+            }
+            return needsContentRefresh
         }
 
         func attach(scrollView: HorizontalDragScrollView, hostingView: NSHostingView<AnyView>) {

@@ -37,6 +37,8 @@ enum ClipboardTab: String, Codable, Identifiable {
 }
 
 struct ClipboardEntry: Identifiable, Codable, Equatable {
+    static let searchableTextPrefixLimit = 20_000
+
     let id: UUID
     var timestamp: Date
     var type: ClipboardEntryType
@@ -130,5 +132,19 @@ struct ClipboardEntry: Identifiable, Codable, Equatable {
         case .image:
             return note.isEmpty ? "图片" : note
         }
+    }
+
+    var searchIndexText: String {
+        var values: [String] = []
+        if let text { values.append(Self.searchablePrefix(from: text)) }
+        if !note.isEmpty { values.append(note) }
+        if let formattedTimestampText { values.append(formattedTimestampText) }
+        if let developerMetadata { values.append(developerMetadata.searchableText) }
+        return values.joined(separator: " ").lowercased()
+    }
+
+    private static func searchablePrefix(from text: String) -> String {
+        guard text.count > searchableTextPrefixLimit else { return text }
+        return String(text.prefix(searchableTextPrefixLimit))
     }
 }

@@ -7,12 +7,18 @@ import Combine
 final class ClipboardHistoryViewModel: ObservableObject {
     private static let imageCache = NSCache<NSString, NSImage>()
     @Published private(set) var entries: [ClipboardEntry] = [] {
-        didSet { refreshFilteredEntries() }
+        didSet {
+            entriesVersion &+= 1
+            rebuildSearchIndex()
+            refreshFilteredEntries(forcePublish: true)
+        }
     }
     @Published private(set) var filteredEntries: [ClipboardEntry] = []
+    private(set) var entriesVersion = 0
+    private(set) var filteredEntriesVersion = 0
     @Published var settings: ClipboardSettings
     @Published var searchText: String = "" {
-        didSet { refreshFilteredEntries() }
+        didSet { scheduleSearchRefresh() }
     }
     @Published var selectedTab: ClipboardTab = .clipboardHistory {
         didSet { refreshFilteredEntries() }
@@ -28,6 +34,9 @@ final class ClipboardHistoryViewModel: ObservableObject {
     private var lastCaptureDate: Date?
     private var ignoredPasteboardFingerprints: [String: Date] = [:]
     private let ignoredPasteboardFingerprintTTL: TimeInterval = 5
+    private var searchIndex: [UUID: String] = [:]
+    private var searchRefreshTask: Task<Void, Never>?
+    private let searchRefreshDelayNanoseconds: UInt64 = 80_000_000
 
     init(store: ClipboardHistoryPersisting = ClipboardHistoryStore(),
          watcher: ClipboardWatching = ClipboardWatcher(),
@@ -63,7 +72,8 @@ final class ClipboardHistoryViewModel: ObservableObject {
     private static func buildFilteredEntries(
         entries: [ClipboardEntry],
         searchText: String,
-        selectedTab: ClipboardTab
+        selectedTab: ClipboardTab,
+        searchIndex: [UUID: String]
     ) -> [ClipboardEntry] {
         let normalizedKeyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
@@ -71,11 +81,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
             guard matchesTab(for: entry, selectedTab: selectedTab) else { return false }
             guard !normalizedKeyword.isEmpty else { return true }
 
-            let textMatch = entry.text?.localizedCaseInsensitiveContains(normalizedKeyword) == true
-            let noteMatch = entry.note.localizedCaseInsensitiveContains(normalizedKeyword)
-            let timestampMatch = entry.formattedTimestampText?.localizedCaseInsensitiveContains(normalizedKeyword) == true
-            let developerMetadataMatch = entry.developerMetadata?.searchableText.localizedCaseInsensitiveContains(normalizedKeyword) == true
-            return textMatch || noteMatch || timestampMatch || developerMetadataMatch
+            return searchIndex[entry.id]?.contains(normalizedKeyword) == true
         }
     }
 
@@ -91,11 +97,50 @@ final class ClipboardHistoryViewModel: ObservableObject {
     }
 
     private func refreshFilteredEntries() {
-        filteredEntries = Self.buildFilteredEntries(
+        refreshFilteredEntries(forcePublish: false)
+    }
+
+    private func refreshFilteredEntries(forcePublish: Bool) {
+        let nextEntries = Self.buildFilteredEntries(
             entries: entries,
             searchText: searchText,
-            selectedTab: selectedTab
+            selectedTab: selectedTab,
+            searchIndex: searchIndex
         )
+
+        guard forcePublish || !Self.haveSameEntryIDs(filteredEntries, nextEntries) else {
+            return
+        }
+        filteredEntries = nextEntries
+        filteredEntriesVersion &+= 1
+    }
+
+    private static func haveSameEntryIDs(_ left: [ClipboardEntry], _ right: [ClipboardEntry]) -> Bool {
+        guard left.count == right.count else { return false }
+        return zip(left, right).allSatisfy { $0.id == $1.id }
+    }
+
+    func applySearchImmediately() {
+        searchRefreshTask?.cancel()
+        searchRefreshTask = nil
+        refreshFilteredEntries()
+    }
+
+    private func scheduleSearchRefresh() {
+        searchRefreshTask?.cancel()
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            refreshFilteredEntries()
+            return
+        }
+        searchRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: searchRefreshDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            await self?.refreshFilteredEntries()
+        }
+    }
+
+    private func rebuildSearchIndex() {
+        searchIndex = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.searchIndexText) })
     }
 
     func captureClipboardOnce() {

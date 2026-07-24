@@ -9,9 +9,10 @@ final class PanelWindowManager {
         .stationary
     ]
     static let panelStyleMask: NSWindow.StyleMask = [
-        .borderless,
+        .titled,
         .fullSizeContentView
     ]
+    static let titlebarSeparatorStyle: NSTitlebarSeparatorStyle = .none
 
     private weak var window: NSWindow?
     private var resizeObserver: NSObjectProtocol?
@@ -89,6 +90,7 @@ final class PanelWindowManager {
         window.styleMask = Self.panelStyleMask
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = Self.titlebarSeparatorStyle
         window.toolbar = nil
         window.hasShadow = false
         window.isOpaque = false

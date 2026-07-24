@@ -31,10 +31,80 @@ final class ClipboardHistoryTests: XCTestCase {
         await MainActor.run {
             viewModel.selectedTab = .favorite
             viewModel.searchText = "hello"
+            viewModel.applySearchImmediately()
 
             XCTAssertEqual(viewModel.filteredEntries.count, 1)
             XCTAssertEqual(viewModel.filteredEntries.first?.id, favorite.id)
         }
+    }
+
+    func testSearchIndexTextIncludesDerivedMetadataAndUpdates() {
+        var entry = ClipboardEntry(type: .text,
+                                   text: "app_local=es",
+                                   note: "original note",
+                                   sourceApp: "test",
+                                   formattedTimestampText: "2026/07/24 12:00:00",
+                                   developerMetadata: ClipboardDeveloperMetadata(appLocals: ["es"],
+                                                                                siteIdentifiers: ["10042"],
+                                                                                domains: [],
+                                                                                urls: [],
+                                                                                siteInfos: [ClipboardSiteInfo(appLocal: "es",
+                                                                                                              siteID: "10042",
+                                                                                                              siteName: "西班牙",
+                                                                                                              shopType: "B2C",
+                                                                                                              idc: "sg",
+                                                                                                              tenantID: "XIAOMI",
+                                                                                                              areaID: "ES")]))
+
+        XCTAssertTrue(entry.searchIndexText.contains("xiaomi"))
+        XCTAssertTrue(entry.searchIndexText.contains("original note"))
+
+        entry.note = "updated note"
+        entry.developerMetadata = nil
+
+        XCTAssertTrue(entry.searchIndexText.contains("updated note"))
+        XCTAssertFalse(entry.searchIndexText.contains("xiaomi"))
+    }
+
+    func testSearchIndexTextCapsVeryLargeBodyText() {
+        let hiddenTailMarker = "needle-at-tail"
+        let text = String(repeating: "a", count: ClipboardEntry.searchableTextPrefixLimit + 1) + hiddenTailMarker
+        let entry = ClipboardEntry(type: .text,
+                                   text: text,
+                                   note: "searchable note marker",
+                                   sourceApp: "test")
+
+        XCTAssertTrue(entry.searchIndexText.contains(String(repeating: "a", count: 16)))
+        XCTAssertTrue(entry.searchIndexText.contains("searchable note marker"))
+        XCTAssertFalse(entry.searchIndexText.contains(hiddenTailMarker))
+    }
+
+    func testSearchDoesNotPublishFilteredEntriesWhenResultUnchanged() async throws {
+        let entries = [
+            ClipboardEntry(type: .text, text: "alpha one", sourceApp: "test"),
+            ClipboardEntry(type: .text, text: "alpha two", sourceApp: "test")
+        ]
+        let store = InMemoryStore(entries: entries)
+        let watcher = MockWatcher()
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: store, watcher: watcher)
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        var publishCount = 0
+        var cancellable: AnyCancellable?
+        await MainActor.run {
+            cancellable = viewModel.$filteredEntries.dropFirst().sink { _ in
+                publishCount += 1
+            }
+            viewModel.searchText = "alpha"
+        }
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertEqual(publishCount, 0)
+        _ = cancellable
     }
 
     func testUpdateHistoryLimitAppliesImmediately() async throws {
@@ -342,7 +412,9 @@ final class ClipboardHistoryTests: XCTestCase {
 
         await MainActor.run {
             viewModel.searchText = "西班牙"
+            viewModel.applySearchImmediately()
             XCTAssertEqual(viewModel.filteredEntries.count, 1)
+            XCTAssertTrue(viewModel.entries.first?.searchIndexText.contains("西班牙") == true)
         }
     }
 
@@ -486,12 +558,18 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertTrue(behavior.contains(.stationary))
     }
 
-    func testPanelWindowManagerUsesBorderlessPanelStyle() {
+    func testPanelWindowManagerUsesKeyablePanelStyle() {
         let styleMask = PanelWindowManager.panelStyleMask
 
-        XCTAssertTrue(styleMask.contains(.borderless))
+        XCTAssertTrue(styleMask.contains(.titled))
         XCTAssertTrue(styleMask.contains(.fullSizeContentView))
-        XCTAssertFalse(styleMask.contains(.titled))
+        XCTAssertEqual(PanelWindowManager.titlebarSeparatorStyle, .none)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                              styleMask: styleMask,
+                              backing: .buffered,
+                              defer: false)
+        XCTAssertTrue(window.canBecomeKey)
     }
 
     @MainActor
