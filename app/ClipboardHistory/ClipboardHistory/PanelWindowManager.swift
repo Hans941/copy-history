@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+final class KeyablePanelWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 final class PanelWindowManager {
     static let shared = PanelWindowManager()
     static let defaultCollectionBehavior: NSWindow.CollectionBehavior = [
@@ -9,12 +14,12 @@ final class PanelWindowManager {
         .stationary
     ]
     static let panelStyleMask: NSWindow.StyleMask = [
-        .titled,
+        .borderless,
         .fullSizeContentView
     ]
-    static let titlebarSeparatorStyle: NSTitlebarSeparatorStyle = .none
 
     private weak var window: NSWindow?
+    private var replacementWindow: KeyablePanelWindow?
     private var resizeObserver: NSObjectProtocol?
     private var spaceObserver: NSObjectProtocol?
     private var desiredVisible = false
@@ -40,7 +45,7 @@ final class PanelWindowManager {
     }
 
     func attach(window: NSWindow?) {
-        guard let window else { return }
+        guard let window = keyableWindow(for: window) else { return }
         if self.window !== window {
             self.window = window
             configure(window: window)
@@ -86,11 +91,35 @@ final class PanelWindowManager {
 
     // MARK: - Private Helpers
 
+    private func keyableWindow(for sourceWindow: NSWindow?) -> NSWindow? {
+        guard let sourceWindow else { return nil }
+        if sourceWindow is KeyablePanelWindow {
+            return sourceWindow
+        }
+        if let replacementWindow {
+            sourceWindow.orderOut(nil)
+            return replacementWindow
+        }
+
+        let replacementWindow = KeyablePanelWindow(
+            contentRect: sourceWindow.frame,
+            styleMask: Self.panelStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        replacementWindow.contentView = sourceWindow.contentView
+        replacementWindow.minSize = sourceWindow.minSize
+        replacementWindow.maxSize = sourceWindow.maxSize
+        replacementWindow.setFrame(sourceWindow.frame, display: false)
+        sourceWindow.orderOut(nil)
+        self.replacementWindow = replacementWindow
+        return replacementWindow
+    }
+
     private func configure(window: NSWindow) {
         window.styleMask = Self.panelStyleMask
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = Self.titlebarSeparatorStyle
         window.toolbar = nil
         window.hasShadow = false
         window.isOpaque = false

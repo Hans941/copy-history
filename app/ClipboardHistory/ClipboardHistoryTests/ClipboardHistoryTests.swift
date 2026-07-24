@@ -558,18 +558,22 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertTrue(behavior.contains(.stationary))
     }
 
-    func testPanelWindowManagerUsesKeyablePanelStyle() {
+    func testPanelWindowManagerUsesBorderlessPanelStyle() {
         let styleMask = PanelWindowManager.panelStyleMask
 
-        XCTAssertTrue(styleMask.contains(.titled))
         XCTAssertTrue(styleMask.contains(.fullSizeContentView))
-        XCTAssertEqual(PanelWindowManager.titlebarSeparatorStyle, .none)
+        XCTAssertFalse(styleMask.contains(.titled))
+    }
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
-                              styleMask: styleMask,
-                              backing: .buffered,
-                              defer: false)
+    func testKeyablePanelWindowAcceptsTextInputWhileBorderless() {
+        let styleMask = PanelWindowManager.panelStyleMask
+
+        let window = KeyablePanelWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                                        styleMask: styleMask,
+                                        backing: .buffered,
+                                        defer: false)
         XCTAssertTrue(window.canBecomeKey)
+        XCTAssertTrue(window.canBecomeMain)
     }
 
     @MainActor

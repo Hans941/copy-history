@@ -150,6 +150,8 @@ Release 产物通常位于：
 ~/Library/Developer/Xcode/DerivedData/ClipboardHistory-*/Build/Products/Release/CopyCopy.app
 ```
 
+GitHub Release 资产按版本命名，避免覆盖旧版本下载包：`CopyCopy-{version}-arm64.dmg`、`CopyCopy-{version}-arm64.zip` 和 `SHA256SUMS.txt`。
+
 > 注意：当前仓库没有提供正式签名和公证后的安装包。如果要发给普通用户，需要使用 Developer ID Application 证书签名并完成 notarization。
 
 ## 当前已知待优化
