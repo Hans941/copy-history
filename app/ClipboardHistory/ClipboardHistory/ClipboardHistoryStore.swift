@@ -45,7 +45,10 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     }
 
     deinit {
-        if let db { sqlite3_close(db) }
+        let database = db
+        queue.sync {
+            if let database { sqlite3_close(database) }
+        }
     }
 
     func loadEntries(limit: Int? = nil, offset: Int = 0) -> [ClipboardEntry] {
@@ -91,7 +94,7 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     }
 
     func saveEntries(_ entries: [ClipboardEntry]) {
-        queue.async {
+        queue.sync {
             guard let db = self.db else { return }
             sqlite3_exec(db, "BEGIN TRANSACTION", nil, nil, nil)
             sqlite3_exec(db, "DELETE FROM clipboard_entry", nil, nil, nil)
@@ -101,7 +104,7 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     }
 
     func append(entry: ClipboardEntry) {
-        queue.async {
+        queue.sync {
             guard let db = self.db else { return }
             sqlite3_exec(db, "BEGIN TRANSACTION", nil, nil, nil)
             self.insert(entry: entry, db: db)
@@ -110,7 +113,7 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     }
 
     func updateEntry(_ entry: ClipboardEntry) {
-        queue.async {
+        queue.sync {
             guard let db = self.db else { return }
             let sql = "UPDATE clipboard_entry SET ts = ?, type = ?, text = ?, image_path = ?, tab = ?, note = ?, source_app = ?, is_favorite = ? WHERE id = ?;"
             var statement: OpaquePointer?
@@ -131,7 +134,7 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     }
 
     func removeEntry(id: UUID) {
-        queue.async {
+        queue.sync {
             guard let db = self.db else { return }
             let sql = "DELETE FROM clipboard_entry WHERE id = ?;"
             var statement: OpaquePointer?
@@ -144,7 +147,7 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     }
 
     func clearNonFavorites() {
-        queue.async {
+        queue.sync {
             guard let db = self.db else { return }
             let entriesToDelete = self.fetchEntriesForDeletion(
                 db: db,

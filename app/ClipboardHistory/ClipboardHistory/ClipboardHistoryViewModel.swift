@@ -157,6 +157,17 @@ final class ClipboardHistoryViewModel: ObservableObject {
         store.updateEntry(entries[index])
     }
 
+    func select(entry: ClipboardEntry) {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        var selectedEntry = entries[index]
+        selectedEntry.timestamp = Date()
+        var reorderedEntries = entries
+        reorderedEntries.remove(at: index)
+        reorderedEntries.insert(selectedEntry, at: 0)
+        entries = reorderedEntries
+        store.updateEntry(selectedEntry)
+    }
+
     func deleteEntries(at offsets: IndexSet) {
         offsets.forEach { index in
             let entry = filteredEntries[index]

@@ -549,6 +549,7 @@ struct ContentView: View {
     }
 
     private func select(entry: ClipboardEntry) {
+        viewModel.select(entry: entry)
         viewModel.copyToPasteboard(entry: entry, showAlert: false)
         dismissPanel(reason: "select")
         NSSound(named: NSSound.Name("Tink"))?.play()

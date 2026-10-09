@@ -227,6 +227,68 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: imageURL.path))
     }
 
+    func testToggleFavoritePersistsAcrossStoreReopen() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let entry = ClipboardEntry(type: .text, text: "favorite survives restart", sourceApp: "test")
+        let store = ClipboardHistoryStore(baseDirectory: tempDirectory)
+        store.append(entry: entry)
+        let watcher = MockWatcher()
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: store, watcher: watcher)
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        await MainActor.run {
+            viewModel.toggleFavorite(for: entry)
+            XCTAssertTrue(viewModel.entries.first?.isFavorite == true)
+        }
+
+        let reopenedStore = ClipboardHistoryStore(baseDirectory: tempDirectory)
+        let persistedEntry = reopenedStore.loadEntries(limit: 10, offset: 0).first
+        XCTAssertEqual(persistedEntry?.id, entry.id)
+        XCTAssertTrue(persistedEntry?.isFavorite == true)
+    }
+
+    func testSelectingEntryMovesItToFrontAndPersistsAcrossStoreReopen() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let olderEntry = ClipboardEntry(timestamp: Date(timeIntervalSinceNow: -60),
+                                        type: .text,
+                                        text: "selected entry",
+                                        sourceApp: "test")
+        let newerEntry = ClipboardEntry(timestamp: Date(timeIntervalSinceNow: -30),
+                                        type: .text,
+                                        text: "other entry",
+                                        sourceApp: "test")
+        let store = ClipboardHistoryStore(baseDirectory: tempDirectory)
+        store.saveEntries([newerEntry, olderEntry])
+        let watcher = MockWatcher()
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: store, watcher: watcher)
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let originalTimestamp = olderEntry.timestamp
+        await MainActor.run {
+            XCTAssertEqual(viewModel.entries.map(\.id), [newerEntry.id, olderEntry.id])
+            viewModel.select(entry: olderEntry)
+            XCTAssertEqual(viewModel.entries.first?.id, olderEntry.id)
+            XCTAssertGreaterThan(viewModel.entries.first?.timestamp ?? .distantPast, originalTimestamp)
+        }
+
+        let reopenedStore = ClipboardHistoryStore(baseDirectory: tempDirectory)
+        let persistedEntries = reopenedStore.loadEntries(limit: 10, offset: 0)
+        XCTAssertEqual(persistedEntries.map(\.id), [olderEntry.id, newerEntry.id])
+
+        await MainActor.run {
+            viewModel.copyToPasteboard(entry: newerEntry, showAlert: false)
+            XCTAssertEqual(viewModel.entries.map(\.id), [olderEntry.id, newerEntry.id])
+        }
+    }
+
     func testTimestampTextGeneratesFormattedPreview() async throws {
         let store = InMemoryStore()
         let watcher = MockWatcher()
