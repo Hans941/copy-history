@@ -650,9 +650,16 @@ struct ContentView: View {
     }
 
     private func dismissPanel(reason: String) {
-        DispatchQueue.main.async {
+        let dismiss = {
+            PanelWindowManager.shared.setVisibility(false)
             isPanelVisible = false
             ClipLog.info("dismiss_panel reason=\(reason)")
+        }
+
+        if Thread.isMainThread {
+            dismiss()
+        } else {
+            DispatchQueue.main.async(execute: dismiss)
         }
     }
 
