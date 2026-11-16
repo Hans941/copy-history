@@ -9,7 +9,6 @@ final class ClipboardHistoryViewModel: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = [] {
         didSet {
             entriesVersion &+= 1
-            rebuildSearchIndex()
             refreshFilteredEntries(forcePublish: true)
         }
     }
@@ -139,10 +138,6 @@ final class ClipboardHistoryViewModel: ObservableObject {
         }
     }
 
-    private func rebuildSearchIndex() {
-        searchIndex = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.searchIndexText) })
-    }
-
     func captureClipboardOnce() {
         guard let snapshot = watcherCaptureFallback() else {
             displayAlert(message: "当前剪贴板不包含文本或图片")
@@ -166,6 +161,10 @@ final class ClipboardHistoryViewModel: ObservableObject {
         reorderedEntries.insert(selectedEntry, at: 0)
         entries = reorderedEntries
         store.updateEntry(selectedEntry)
+    }
+
+    func prepareForPanelPresentation() {
+        selectedTab = .clipboardHistory
     }
 
     func deleteEntries(at offsets: IndexSet) {
@@ -230,11 +229,14 @@ final class ClipboardHistoryViewModel: ObservableObject {
     func update(entry: ClipboardEntry, newText: String, note: String) {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         guard entries[index].type == .text else { return }
-        entries[index].text = newText
-        entries[index].note = note
-        entries[index].timestamp = Date()
-        entries[index] = applyingDerivedMetadata(to: entries[index])
-        store.updateEntry(entries[index])
+        var updatedEntry = entries[index]
+        updatedEntry.text = newText
+        updatedEntry.note = note
+        updatedEntry.timestamp = Date()
+        updatedEntry = applyingDerivedMetadata(to: updatedEntry)
+        updateSearchIndex(for: updatedEntry)
+        entries[index] = updatedEntry
+        store.updateEntry(updatedEntry)
     }
 
     func jsonPreview(for entry: ClipboardEntry) -> String? {
@@ -307,7 +309,9 @@ final class ClipboardHistoryViewModel: ObservableObject {
         let effectiveHistoryLimit = historyLimit ?? settings.historyLimit
         let effectiveImageQuota = imageQuotaMB ?? settings.imageQuotaMB
         store.enforceQuota(historyLimit: effectiveHistoryLimit, imageQuotaMB: effectiveImageQuota)
-        entries = store.loadEntries(limit: effectiveHistoryLimit, offset: 0).map { applyingDerivedMetadata(to: $0) }
+        let loadedEntries = store.loadEntries(limit: effectiveHistoryLimit, offset: 0).map { applyingDerivedMetadata(to: $0) }
+        searchIndex = Dictionary(uniqueKeysWithValues: loadedEntries.map { ($0.id, $0.searchIndexText) })
+        entries = loadedEntries
     }
 
     private func handle(snapshot: ClipboardSnapshot) {
@@ -400,8 +404,11 @@ final class ClipboardHistoryViewModel: ObservableObject {
 
     private func insert(entry: ClipboardEntry) {
         let enrichedEntry = applyingDerivedMetadata(to: entry)
+        updateSearchIndex(for: enrichedEntry)
         entries.insert(enrichedEntry, at: 0)
         if entries.count > settings.historyLimit {
+            let removedEntries = entries.suffix(entries.count - settings.historyLimit)
+            removedEntries.forEach { searchIndex.removeValue(forKey: $0.id) }
             entries.removeLast(entries.count - settings.historyLimit)
         }
         store.append(entry: enrichedEntry)
@@ -426,7 +433,9 @@ final class ClipboardHistoryViewModel: ObservableObject {
     }
 
     private func refreshDerivedMetadata() {
-        entries = entries.map { applyingDerivedMetadata(to: $0) }
+        let enrichedEntries = entries.map { applyingDerivedMetadata(to: $0) }
+        searchIndex = Dictionary(uniqueKeysWithValues: enrichedEntries.map { ($0.id, $0.searchIndexText) })
+        entries = enrichedEntries
     }
 
     private func watcherCaptureFallback() -> ClipboardSnapshot? {
@@ -443,6 +452,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
 
     private func remove(entryID: UUID) {
         if let index = entries.firstIndex(where: { $0.id == entryID }) {
+            searchIndex.removeValue(forKey: entryID)
             let entry = entries.remove(at: index)
             if entry.type == .image, let name = entry.imagePath {
                 Self.imageCache.removeObject(forKey: name as NSString)
@@ -450,6 +460,10 @@ final class ClipboardHistoryViewModel: ObservableObject {
             }
             store.removeEntry(id: entryID)
         }
+    }
+
+    private func updateSearchIndex(for entry: ClipboardEntry) {
+        searchIndex[entry.id] = entry.searchIndexText
     }
 
     private func displayAlert(message: String) {

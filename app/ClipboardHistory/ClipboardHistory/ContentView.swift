@@ -97,6 +97,7 @@ struct ContentView: View {
             .onChange(of: isPanelVisible) { newValue in
                 PanelWindowManager.shared.setVisibility(newValue)
                 if newValue {
+                    viewModel.prepareForPanelPresentation()
                     resetSelectionState()
                     PanelWindowManager.shared.repositionToFocusedScreen()
                 } else {
@@ -352,6 +353,16 @@ struct ContentView: View {
                 Text(entry.sourceApp)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                Spacer()
+                if let characterCount = entry.characterCount {
+                    Text("\(characterCount) 字符")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("图片")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Image(systemName: "line.3.horizontal")
                     .font(.caption2)

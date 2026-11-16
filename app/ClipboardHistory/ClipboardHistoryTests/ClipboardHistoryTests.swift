@@ -4,6 +4,25 @@ import Combine
 @testable import CopyCopy
 
 final class ClipboardHistoryTests: XCTestCase {
+    func testEntryCharacterCountUsesSwiftCharacterCount() {
+        let entry = ClipboardEntry(type: .text,
+                                   text: "你好🙂",
+                                   sourceApp: "test")
+
+        XCTAssertEqual(entry.characterCount, 3)
+        XCTAssertNil(ClipboardEntry(type: .image, sourceApp: "test").characterCount)
+    }
+
+    @MainActor
+    func testPreparingForPanelPresentationResetsToClipboardHistory() {
+        let viewModel = ClipboardHistoryViewModel(store: InMemoryStore(), watcher: MockWatcher())
+        viewModel.selectedTab = .favorite
+
+        viewModel.prepareForPanelPresentation()
+
+        XCTAssertEqual(viewModel.selectedTab, .clipboardHistory)
+    }
+
     func testInsertTextEntry() async throws {
         let store = InMemoryStore()
         let watcher = MockWatcher()
@@ -66,17 +85,42 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertFalse(entry.searchIndexText.contains("xiaomi"))
     }
 
-    func testSearchIndexTextCapsVeryLargeBodyText() {
-        let hiddenTailMarker = "needle-at-tail"
-        let text = String(repeating: "a", count: ClipboardEntry.searchableTextPrefixLimit + 1) + hiddenTailMarker
-        let entry = ClipboardEntry(type: .text,
-                                   text: text,
-                                   note: "searchable note marker",
-                                   sourceApp: "test")
+    func testSearchIndexSkipsTextLongerThan500CharactersButKeepsNotes() {
+        let withinLimit = ClipboardEntry(type: .text,
+                                         text: String(repeating: "a", count: 500),
+                                         sourceApp: "test")
+        let bodyOnlyMarker = "body-only-marker"
+        let overLimit = ClipboardEntry(type: .text,
+                                       text: String(repeating: "b", count: 501) + bodyOnlyMarker,
+                                       note: "searchable note marker",
+                                       sourceApp: "test")
 
-        XCTAssertTrue(entry.searchIndexText.contains(String(repeating: "a", count: 16)))
-        XCTAssertTrue(entry.searchIndexText.contains("searchable note marker"))
-        XCTAssertFalse(entry.searchIndexText.contains(hiddenTailMarker))
+        XCTAssertTrue(withinLimit.searchIndexText.contains(String(repeating: "a", count: 500)))
+        XCTAssertFalse(overLimit.searchIndexText.contains(bodyOnlyMarker))
+        XCTAssertTrue(overLimit.searchIndexText.contains("searchable note marker"))
+    }
+
+    func testEditingEntryUpdatesItsSearchIndex() async throws {
+        let entry = ClipboardEntry(type: .text,
+                                   text: "before marker",
+                                   sourceApp: "test")
+        let viewModel = await MainActor.run {
+            ClipboardHistoryViewModel(store: InMemoryStore(entries: [entry]),
+                                      watcher: MockWatcher())
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        await MainActor.run {
+            viewModel.update(entry: entry, newText: "after marker", note: "")
+            viewModel.searchText = "after marker"
+            viewModel.applySearchImmediately()
+            XCTAssertEqual(viewModel.filteredEntries.map(\.id), [entry.id])
+
+            viewModel.searchText = "before marker"
+            viewModel.applySearchImmediately()
+            XCTAssertTrue(viewModel.filteredEntries.isEmpty)
+        }
     }
 
     func testSearchDoesNotPublishFilteredEntriesWhenResultUnchanged() async throws {
