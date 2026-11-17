@@ -150,6 +150,8 @@ final class ClipboardHistoryViewModel: ObservableObject {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         entries[index].isFavorite.toggle()
         store.updateEntry(entries[index])
+        trimInMemoryNonFavoritesIfNeeded()
+        store.enforceQuota(historyLimit: settings.historyLimit, imageQuotaMB: settings.imageQuotaMB)
     }
 
     func select(entry: ClipboardEntry) {
@@ -406,11 +408,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         let enrichedEntry = applyingDerivedMetadata(to: entry)
         updateSearchIndex(for: enrichedEntry)
         entries.insert(enrichedEntry, at: 0)
-        if entries.count > settings.historyLimit {
-            let removedEntries = entries.suffix(entries.count - settings.historyLimit)
-            removedEntries.forEach { searchIndex.removeValue(forKey: $0.id) }
-            entries.removeLast(entries.count - settings.historyLimit)
-        }
+        trimInMemoryNonFavoritesIfNeeded()
         store.append(entry: enrichedEntry)
         store.enforceQuota(historyLimit: settings.historyLimit, imageQuotaMB: settings.imageQuotaMB)
     }
@@ -464,6 +462,24 @@ final class ClipboardHistoryViewModel: ObservableObject {
 
     private func updateSearchIndex(for entry: ClipboardEntry) {
         searchIndex[entry.id] = entry.searchIndexText
+    }
+
+    private func trimInMemoryNonFavoritesIfNeeded() {
+        var nonFavoriteCount = entries.reduce(into: 0) { count, entry in
+            if !entry.isFavorite {
+                count += 1
+            }
+        }
+
+        guard nonFavoriteCount > settings.historyLimit else { return }
+        for index in entries.indices.reversed() where !entries[index].isFavorite {
+            let removedEntry = entries.remove(at: index)
+            searchIndex.removeValue(forKey: removedEntry.id)
+            nonFavoriteCount -= 1
+            if nonFavoriteCount == settings.historyLimit {
+                break
+            }
+        }
     }
 
     private func displayAlert(message: String) {

@@ -54,7 +54,21 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
     func loadEntries(limit: Int? = nil, offset: Int = 0) -> [ClipboardEntry] {
         queue.sync {
             guard let db else { return [] }
-            let sql = "SELECT id, ts, type, text, image_path, tab, note, source_app, is_favorite FROM clipboard_entry ORDER BY ts DESC LIMIT ? OFFSET ?;"
+            let sql = """
+            SELECT id, ts, type, text, image_path, tab, note, source_app, is_favorite
+            FROM clipboard_entry
+            WHERE is_favorite = 1
+            UNION ALL
+            SELECT id, ts, type, text, image_path, tab, note, source_app, is_favorite
+            FROM (
+                SELECT id, ts, type, text, image_path, tab, note, source_app, is_favorite
+                FROM clipboard_entry
+                WHERE is_favorite = 0
+                ORDER BY ts DESC
+                LIMIT ? OFFSET ?
+            )
+            ORDER BY ts DESC;
+            """
             var statement: OpaquePointer?
             var results: [ClipboardEntry] = []
             if sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK {
@@ -285,7 +299,7 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
 
     private func trimIfNeeded(db: OpaquePointer, limit: Int? = nil) {
         let limitValue = limit ?? defaultLimit
-        let count = currentCount(db: db)
+        let count = currentNonFavoriteCount(db: db)
         guard count > limitValue else { return }
         let overflow = count - limitValue
         let removable = fetchEntriesForDeletion(
@@ -296,10 +310,10 @@ final class ClipboardHistoryStore: ClipboardHistoryPersisting {
         deleteEntries(removable, db: db)
     }
 
-    private func currentCount(db: OpaquePointer) -> Int {
+    private func currentNonFavoriteCount(db: OpaquePointer) -> Int {
         var statement: OpaquePointer?
         var count = 0
-        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM clipboard_entry;", -1, &statement, nil) == SQLITE_OK,
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM clipboard_entry WHERE is_favorite = 0;", -1, &statement, nil) == SQLITE_OK,
            sqlite3_step(statement) == SQLITE_ROW {
             count = Int(sqlite3_column_int(statement, 0))
         }

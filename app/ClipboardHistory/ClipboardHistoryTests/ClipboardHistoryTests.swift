@@ -295,6 +295,30 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertTrue(persistedEntry?.isFavorite == true)
     }
 
+    func testLoadEntriesIncludesOldFavoritesBeyondHistoryLimit() {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let oldFavorite = ClipboardEntry(timestamp: Date(timeIntervalSinceNow: -300),
+                                        type: .text,
+                                        text: "old favorite",
+                                        isFavorite: true,
+                                        sourceApp: "test")
+        let recentEntries = (1...3).map { offset in
+            ClipboardEntry(timestamp: Date(timeIntervalSinceNow: TimeInterval(-offset)),
+                           type: .text,
+                           text: "recent \(offset)",
+                           sourceApp: "test")
+        }
+        let store = ClipboardHistoryStore(baseDirectory: tempDirectory)
+        store.saveEntries(recentEntries + [oldFavorite])
+
+        let loadedEntries = store.loadEntries(limit: 2, offset: 0)
+
+        XCTAssertEqual(loadedEntries.count, 3)
+        XCTAssertTrue(loadedEntries.contains { $0.id == oldFavorite.id })
+        XCTAssertEqual(loadedEntries.filter { !$0.isFavorite }.count, 2)
+    }
+
     func testSelectingEntryMovesItToFrontAndPersistsAcrossStoreReopen() async throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
